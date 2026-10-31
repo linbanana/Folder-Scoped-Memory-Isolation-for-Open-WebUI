@@ -27,4 +27,3 @@ Targets Open WebUI v0.12.5.
 
 - 32 local behavior tests passed, using simulated OWUI storage and model decisions.
 - `git diff --check` passed.
-- User-reported test-environment checks confirmed global cross-chat recall and folder memory recall. These are smoke tests, not exhaustive live integration or model-accuracy validation.

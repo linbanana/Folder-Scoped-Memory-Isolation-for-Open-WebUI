@@ -98,5 +98,3 @@ Source references for v0.12.5: [memory API](https://github.com/open-webui/open-w
 4. Add a preference and correct it. Verify replacement retains folder tags and changes the existing row rather than adding contradictory facts.
 5. Test recall questions, negations, ambiguous deletions, several languages, and a second folder/user. Verify no cross-scope mutation or retrieval.
 6. Verify native memory tools/background review stay disabled while unrelated tools still work. Test timeouts and vector failures separately.
-
-使用者已在測試環境確認 global 跨聊天讀取與資料夾記憶讀取。其他模型、權限、失敗處理及第三方工具組合仍需依上述清單驗收；這些確認不代表已完成全面實機整合測試。
