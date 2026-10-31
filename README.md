@@ -1,18 +1,17 @@
 # Folder-Scoped Memory Isolation for Open WebUI
 
-Version **0.0.4** — targeting **Open WebUI v0.12.5**, checked on 2026-10-31.
+Version **0.0.4** — for **Open WebUI v0.12.5**.
 
 A Filter Function that manages persistent user memories within a folder/chat scope. One OWUI model call decides whether to add, replace, remove, or skip memories before generating the answer. No language keyword list or separate extraction API key is required.
 
 ## 安裝與設定 / Setup
 
-1. Back up your current function and memories. Replace the old function with `folder_memory_isolation.py`; enable only one copy.
+1. In **Workspace → Functions**, upload `folder_memory_isolation.py`, save it, and enable one instance of the filter.
 2. Apply this filter globally, or to every model/chat that needs isolation. Native memory tools in unfiltered chats can still retrieve tagged rows globally.
-3. Keep the admin memory service and user memory permission enabled. This plugin disables native memory context/tools/background review for the filtered request only.
+3. **Leave Settings → Personalization → Memory enabled; there is no need to switch it off manually.** Keep the admin memory service and user memory permissions enabled as well. For each filtered request, the plugin takes over memory handling and disables the native global memory context, tools, and background review to avoid duplicate processing.
 4. Leave `memory_model` empty to use the current chat model, or set it to an accessible OWUI model ID. Use a standard server-side OpenAI-compatible or Ollama model. Custom Pipes, arena, and direct-only models need a standard server-side `memory_model`.
-5. Old `atomic_memory_enabled`, `raw_save_requires_request`, and `openai_*` settings are obsolete and ignored. There is now one model-driven memory workflow.
 
-請取代原有插件，不要同時啟用多份。管理員記憶服務與使用者權限需保留。預設沿用聊天模型，也可在 `memory_model` 指定 OWUI 內已設定的模型，不必另填 API 金鑰。舊的原子／原始模式開關已移除，統一由模型判斷是否值得保存、如何精簡及是否應更新或刪除。
+在「工作區 → 函式」上傳並啟用插件，設為全域套用。**「設定 → 個人化 → 記憶」維持開啟即可，不需要手動關閉。** 管理員記憶服務與使用者權限也需啟用。插件會接管每次請求的記憶處理，停用該次請求的原生全域記憶流程，避免重複處理。預設沿用聊天模型，也可用 `memory_model` 指定 OWUI 內已設定的模型，不必另填 API 金鑰。
 
 ## 行為 / Behavior
 
@@ -33,7 +32,7 @@ These are expected model decisions, not hardcoded phrase matches. Results depend
 ## 範圍 / Scope
 
 - A user-owned folder shares that user's memories across chats in that exact folder. Parent/child folders are separate.
-- All root chats for the same user share one global pool: legacy untagged memories and every row without a folder tag. `C_ID` records the source chat only; it does not restrict root-chat retrieval. Existing root memories work without migration.
+- All root chats for the same user share one global pool: all memories without a folder tag. `C_ID` records the source chat only; it does not restrict root-chat retrieval.
 - The saved chat record is authoritative; client folder IDs do not override it.
 - Temporary, unsaved, unavailable, unauthorized chats and non-owned shared folders skip memory operations.
 - Moving a chat changes future scope. Existing rows retain their original scope; they are not automatically migrated.
@@ -50,7 +49,6 @@ These are expected model decisions, not hardcoded phrase matches. Results depend
 | `memory_max_tokens` | 768 | Decision output budget; truncated output is rejected without writes |
 | `extraction_timeout` | 30 | Decision request timeout in seconds |
 | `max_inject` | 5 | Most recently updated scoped memories shown in the answer context; 0 disables memory text injection, not management |
-| `enable_auto_cleanup` | False | Legacy field; automatic deletion is disabled |
 | `debug_mode` | False | Show entry/scope/plan/execution stages and concise diagnostic statuses; no memory text or credentials in logs |
 | User Valve `show_status` | True | Concise English load/save/update/delete/failure status |
 
@@ -73,7 +71,7 @@ With debug enabled, `Memory check: 2.3s (model 2.0s; write 0.0s)` reports total 
 - **Deletion authorization:** removal/replacement requires a semantic request from the latest user turn. The planner must quote that turn; IDs must belong to the current scope. Ambiguous requests must not mutate data. Semantic authorization still depends on model accuracy; this is not deterministic natural-language understanding.
 - **Model inputs:** each turn adds one non-streaming model request with the last six user messages (up to 2,000 characters each) and the latest 20 scoped memory previews (up to 600 characters each). Assistant claims/system prompts are excluded. Older/unseen memories may require manual management.
 - **Model output:** the whole operation list is validated before sending it to OWUI: action, scope ID, source index/quotation, evidence from the latest turn, and content length. Validation cannot prove that every model-written fact is true. Invalid output or timeout causes no new planned writes.
-- **Duplicates:** exact normalized facts, including compatible legacy `User: ...` rows, are skipped. The planner also checks supplied candidates for semantic duplicates. Simultaneous requests and differently phrased facts can still produce duplicates. Existing duplicates are not automatically removed.
+- **Duplicates:** exact normalized facts, including `User: ...` rows, are skipped. The planner also checks supplied candidates for semantic duplicates. Simultaneous requests and differently phrased facts can still produce duplicates. Existing duplicates are not automatically removed.
 - **Retries:** a repeated inlet rechecks current rows. No durable request ledger is provided; model-generated paraphrases can still differ on a regenerated turn.
 - **Tag storage:** `[F_ID:...][C_ID:...]` remains in stored content for compatibility. `F_ID` determines the folder scope; no `F_ID` means the user's shared global pool. `C_ID` records provenance only. These tags are a retrieval convention, not database access control.
 - **Deletion of a chat:** does not automatically delete folder-wide memories. Use explicit memory deletion or Manage Memories.
@@ -92,7 +90,7 @@ Source references for v0.12.5: [memory API](https://github.com/open-webui/open-w
 
 ### 實機驗收 / Running-server checks
 
-1. In a separate v0.12.5 test instance, replace the function and set an accessible `memory_model` if needed.
+1. In an Open WebUI v0.12.5 test instance, enable the function globally, leave Personalization → Memory enabled, and set an accessible `memory_model` if needed.
 2. Say a transient event, then ask to remember it. Confirm `Saved 1 memory` and a row in Manage Memories.
 3. Say “delete that memory”. Confirm `Deleted 1 memory`, refresh Manage Memories, and verify the row is absent. A natural-language acknowledgement alone is insufficient.
 4. Add a preference and correct it. Verify replacement retains folder tags and changes the existing row rather than adding contradictory facts.
