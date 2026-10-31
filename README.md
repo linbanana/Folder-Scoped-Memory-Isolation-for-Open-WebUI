@@ -1,109 +1,102 @@
-# Folder-Scoped Memory Isolation & Atomic Memory for Open WebUI 📂🧠
+# Folder-Scoped Memory Isolation for Open WebUI
 
-[English](#english) | [繁體中文](#繁體中文)
+Version **0.0.4** — targeting **Open WebUI v0.12.5**, checked on 2026-10-31.
 
----
+A Filter Function that manages persistent user memories within a folder/chat scope. One OWUI model call decides whether to add, replace, remove, or skip memories before generating the answer. No language keyword list or separate extraction API key is required.
 
-## English
+## 安裝與設定 / Setup
 
-A powerful Filter extension for [Open WebUI](https://github.com/open-webui/open-webui) that provides strict **Folder-level** and **Chat-level** memory isolation, combined with intelligent, LLM-based **Atomic Memory Extraction**. 
+1. Back up your current function and memories. Replace the old function with `folder_memory_isolation.py`; enable only one copy.
+2. Apply this filter globally, or to every model/chat that needs isolation. Native memory tools in unfiltered chats can still retrieve tagged rows globally.
+3. Keep the admin memory service and user memory permission enabled. This plugin disables native memory context/tools/background review for the filtered request only.
+4. Leave `memory_model` empty to use the current chat model, or set it to an accessible OWUI model ID. Use a standard server-side OpenAI-compatible or Ollama model. Custom Pipes, arena, and direct-only models need a standard server-side `memory_model`.
+5. Old `atomic_memory_enabled`, `raw_save_requires_request`, and `openai_*` settings are obsolete and ignored. There is now one model-driven memory workflow.
 
-Prevent context leakage between different projects while maintaining full access to the memory management UI and automatically refining long-term user facts into granular, concise memories.
+請取代原有插件，不要同時啟用多份。管理員記憶服務與使用者權限需保留。預設沿用聊天模型，也可在 `memory_model` 指定 OWUI 內已設定的模型，不必另填 API 金鑰。舊的原子／原始模式開關已移除，統一由模型判斷是否值得保存、如何精簡及是否應更新或刪除。
 
-### 🌟 Features
+## 行為 / Behavior
 
-- **Folder Isolation**: Memories saved within a folder stay strictly within that folder.
-- **LLM Atomic Memory Extraction**: Automatically analyzes dialogue turns to extract concise, long-term personal facts (e.g., job, location, habits, preferences). Ignores ephemeral/technical noise (e.g. coding requests, math, temporary plans).
-- **Global Isolation**: Chats in the root directory maintain their own "global" memory pool, with optional chat-level isolation.
-- **Zero-Risk Fallback**: If the API key is empty, the filter automatically falls back to raw QA pair saving mode, ensuring 100% stability.
-- **Auto-Cleanup (GC)**: Automatically detects and deletes "orphaned" memories when their associated chat is deleted.
-- **Bilingual Status Display**: Automatically shows status messages (`🧠 Extracting...` / `✅ Saved...` / `📘 X mems`) in Traditional Chinese or English based on the user's Open WebUI language setting.
-- **Transparent Tagging**: Uses internal `[F_ID:...]` and `[C_ID:...]` tags that are automatically stripped before reaching the AI or User.
+| User message | Intended behavior |
+| --- | --- |
+| 我習慣用繁體中文 / I prefer Traditional Chinese | Automatically save a concise durable preference |
+| 我今天吃水餃 / I ate dumplings today | Skip a transient event unless explicitly asked to retain it |
+| 記住 / Remember that, after a user statement | Save the referenced user information |
+| 我今天吃什麼？ / What did I eat today? | Read scoped memories; do not store the question/answer |
+| 刪除此記憶 / Forget that | Remove the clearly identified scoped row through the memory API |
+| 改成我偏好 Python / Update that: I prefer Python | Replace the identified fact, preserving its tags/type/path |
+| Ambiguous delete/update | Ask for clarification; no mutation |
 
-### 🚀 Installation
+These are expected model decisions, not hardcoded phrase matches. Results depend on the selected model and require real-server testing.
 
-1. Go to **Workspace** -> **Functions** in your Open WebUI.
-2. Click **Create** or **Upload**.
-3. Paste the content of `folder_memory_isolation.py`.
-4. Click **Save** and ensure the filter is **Enabled**.
+在回答前完成資料庫操作，再將實際結果注入模型。記憶屬於持久資料，不是僅在本次聊天有效。模型只可根據實際結果說明新增、更新或刪除是否成功；原生記憶工具關閉不代表插件沒有刪除能力。模型回覆文字仍可能不準，驗收請以管理記憶介面的實際資料為準。
 
-### ⚙️ Configuration (Valves)
+## 範圍 / Scope
 
-- **enabled**: (Default: True) Enable/disable the filter.
-- **intercept_core**: (Default: True) Block and replace Open WebUI's global core memory injection.
-- **max_inject**: (Default: 5) Number of relevant memories to inject into the context.
-- **enable_auto_cleanup**: (Default: True) Automatically delete memories when their parent chat is deleted.
-- **debug_mode**: (Default: True) Enable verbose logging for troubleshooting.
-- **atomic_memory_enabled**: (Default: True) Extract atomic, concise facts instead of saving raw dialog QA pairs.
-- **openai_api_url**: (Default: `https://api.openai.com/v1`) OpenAI-compatible API URL.
-- **openai_api_key**: (Default: `""`) API Key for the endpoint (leave empty to fallback to raw QA mode).
-- **openai_model**: (Default: `gpt-4o-mini`) Model name for extraction.
+- A user-owned folder shares that user's memories across chats in that exact folder. Parent/child folders are separate.
+- All root chats for the same user share one global pool: legacy untagged memories and every row without a folder tag. `C_ID` records the source chat only; it does not restrict root-chat retrieval. Existing root memories work without migration.
+- The saved chat record is authoritative; client folder IDs do not override it.
+- Temporary, unsaved, unavailable, unauthorized chats and non-owned shared folders skip memory operations.
+- Moving a chat changes future scope. Existing rows retain their original scope; they are not automatically migrated.
+- Models see only candidates from the validated scope. Mutation IDs are checked against a fresh scoped read before execution. A move during model planning cancels processing.
 
-### 🧪 Test Example: Verify Atomic Memory
+## Valves
 
-1. **Step 1: Disable Native Personalization Memory**
-   Go to **Settings -> Personalization -> Memory** and turn it **OFF**. This ensures only our filter manages memory.
-   
-2. **Step 2: Create Memory with Noise**
-   Inside a folder chat, type:
-   > **User**: *"I'm so tired today, it was raining heavily and my shoes are completely wet. By the way, I am self-learning Rust recently because I need to write system-level stuff later and my supervisor says Rust is safer than C++. Can you write a Quick Sort in Rust for me?"*
-   
-   *(You should see `🧠 Extracting atomic memory...` then `✅ Saved 1 atomic memories` at the bottom)*
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | True | Enable the service |
+| `intercept_core` | True | Required for isolation; False bypasses all behavior |
+| `priority` | 100 | Run after ordinary inlet filters |
+| `memory_model` | empty | OWUI decision model ID; empty uses the current chat model |
+| `memory_max_tokens` | 768 | Decision output budget; truncated output is rejected without writes |
+| `extraction_timeout` | 30 | Decision request timeout in seconds |
+| `max_inject` | 5 | Most recently updated scoped memories shown in the answer context; 0 disables memory text injection, not management |
+| `enable_auto_cleanup` | False | Legacy field; automatic deletion is disabled |
+| `debug_mode` | False | Show entry/scope/plan/execution stages and concise diagnostic statuses; no memory text or credentials in logs |
+| User Valve `show_status` | True | Concise English load/save/update/delete/failure status |
 
-3. **Step 3: Verify the Extracted Fact**
-   Go to **Settings -> Personalization -> Manage Memories**. You will see:
-   `[F_ID:xxx][C_ID:xxx] User is self-learning Rust.`
-   *(Notice that wet shoes, rain, and the quick sort request were successfully filtered out!)*
+Normal skipped/duplicate operations are quiet. There is no automatic saving in outlet, so assistant responses are not fed back into memory.
 
----
+For a missing write, temporarily set `debug_mode=True` and User Valve `show_status=True`. A running filter shows `Memory check started (folder; N stored)`, followed by a save/error or `Memory check complete: no changes (N stored)`. Backend `FolderMemory stage=...` logs distinguish entry, scope resolution, proposed/validated operation counts, and applied backend statuses. A missing start status plus no entry log means this code was not invoked; it is not evidence that memory extraction failed. Normal no-change results explicitly tell the answer model that no write occurred and that notes/chat search cannot verify this memory store.
 
-## 繁體中文
+若沒有寫入，暫時開啟 `debug_mode` 與使用者的 `show_status`。請回報出現的英文狀態，或服務端 `FolderMemory stage=...` 日誌；不要只憑模型口頭回答判斷成功與否。尚無實際執行紀錄時，無法斷定是套用、判斷、驗證或資料庫哪一階段出問題。
 
-這是一個為 [Open WebUI](https://github.com/open-webui/open-webui) 設計的強大過濾器擴充功能，結合了嚴格的 **「資料夾級別」/「對話級別」記憶隔離** 與基於大模型的 **「原子化記憶提煉 (Atomic Memory Extraction)」**。
+## Latency
 
-防止不同專案之間的脈絡外洩，同時自動將對話中的長期事實與喜好精煉為簡短、獨立的記憶條目。
+Memory decisions finish before the main answer, adding a model round trip. Choose a fast non-reasoning OWUI model in `memory_model` for short JSON decisions. Provider-specific thinking flags are not guessed. Reasoning can consume the output budget on some models; select a non-reasoning model or raise `memory_max_tokens` when needed. Turning off debug only hides diagnostics; it does not remove the model call.
 
-### 🌟 核心功能
+With debug enabled, `Memory check: 2.3s (model 2.0s; write 0.0s)` reports total plugin time, decision time, and mutation API time (including embeddings/vector work). It excludes the main answer's generation time. Backend logs expose the same timings. Actual speed improvements require measurement on your deployment; simulated tests are not performance benchmarks.
 
-- **資料夾隔離**：在特定資料夾中產生的記憶，僅會在該資料夾內的對話中被載入。
-- **大模型原子記憶提煉**：自動分析每輪對話，提煉出關於使用者的長期事實與偏好（如工作、居住地、習慣、喜好），自動排除短期技術任務與日常廢話。
-- **全域隔離**：根目錄下的對話擁有獨立的「全域記憶池」，且支援對話間的互相隔離。
-- **安全回退機制**：未設定 API 金鑰時，自動無縫回退至「原始對話儲存模式」，確保 100% 穩定不報錯。
-- **自動清理 (GC)**：當對話被刪除後，該對話產生的孤兒記憶會在下一次互動時自動偵測並刪除。
-- **雙語狀態顯示**：根據語系設定，自動顯示繁體中文或英文的狀態提示（`🧠 正在提取...` / `✅ 已儲存...` / `📘 筆記憶`）。
-- **透明標籤系統**：使用 `[F_ID:...]` 與 `[C_ID:...]` 標籤，並在傳輸前自動移除。
+## Conflicts and limitations
 
-### 🚀 安裝步驟
+- **Other filters/tools:** do not run competing memory filters. A later filter re-enabling native memory, external memory tools, or custom Pipes can bypass isolation. Knowledge retrieval and reference-chat tools have independent scope rules.
+- **Persistence API:** add/replace/remove use OWUI's `update_memories` API to coordinate database rows, embeddings/vector removal, and events. Database changes may commit before a vector operation fails; errors are reported as failed/partial, followed by a fresh read. Inspect Manage Memories before retrying.
+- **Deletion authorization:** removal/replacement requires a semantic request from the latest user turn. The planner must quote that turn; IDs must belong to the current scope. Ambiguous requests must not mutate data. Semantic authorization still depends on model accuracy; this is not deterministic natural-language understanding.
+- **Model inputs:** each turn adds one non-streaming model request with the last six user messages (up to 2,000 characters each) and the latest 20 scoped memory previews (up to 600 characters each). Assistant claims/system prompts are excluded. Older/unseen memories may require manual management.
+- **Model output:** the whole operation list is validated before sending it to OWUI: action, scope ID, source index/quotation, evidence from the latest turn, and content length. Validation cannot prove that every model-written fact is true. Invalid output or timeout causes no new planned writes.
+- **Duplicates:** exact normalized facts, including compatible legacy `User: ...` rows, are skipped. The planner also checks supplied candidates for semantic duplicates. Simultaneous requests and differently phrased facts can still produce duplicates. Existing duplicates are not automatically removed.
+- **Retries:** a repeated inlet rechecks current rows. No durable request ledger is provided; model-generated paraphrases can still differ on a regenerated turn.
+- **Tag storage:** `[F_ID:...][C_ID:...]` remains in stored content for compatibility. `F_ID` determines the folder scope; no `F_ID` means the user's shared global pool. `C_ID` records provenance only. These tags are a retrieval convention, not database access control.
+- **Deletion of a chat:** does not automatically delete folder-wide memories. Use explicit memory deletion or Manage Memories.
+- **Time:** no automatic expiry or short-term memory store is implemented. An explicitly retained transient fact persists until removed; dates should be stated clearly.
 
-1. 進入 Open WebUI 的 **Workspace** -> **Functions**。
-2. 點擊 **Create** 或 **Upload**。
-3. 將 `folder_memory_isolation.py` 的內容貼上。
-4. 點擊 **Save** 並確保已 **Enabled**。
+## Verification
 
-### ⚙️ 設定選項 (Valves)
+```powershell
+python -B -m unittest discover -s tests -v
+git diff --check
+```
 
-- **enabled**: （預設：True）啟用/停用此過濾器。
-- **intercept_core**: （預設：True）攔截並替換 Open WebUI 原生的全域核心記憶注入。
-- **max_inject**: （預設：5）注入至當前上下文的相關記憶條數上限。
-- **enable_auto_cleanup**: （預設：True）當對話被刪除時，自動清理關聯的記憶。
-- **debug_mode**: （預設：True）啟用詳細日誌輸出，便於調試。
-- **atomic_memory_enabled**: （預設：True）提取原子化、簡短的事實，而非儲存原始問答對。
-- **openai_api_url**: （預設：`https://api.openai.com/v1`）OpenAI 相容的接口網址。
-- **openai_api_key**: （預設：`""`）API 金鑰（若留空，將自動安全回退至傳統對話儲存模式）。
-- **openai_model**: （預設：`gpt-4o-mini`）用於提煉事實的模型名稱。
+Local tests simulate planner decisions and OWUI storage APIs. They verify orchestration, scope validation, status/context results and failure handling; they do not establish actual model accuracy or live database/vector integration.
 
-### 🧪 測試與驗證
+Source references for v0.12.5: [memory API](https://github.com/open-webui/open-webui/blob/v0.12.5/backend/open_webui/routers/memories.py), [storage operations](https://github.com/open-webui/open-webui/blob/v0.12.5/backend/open_webui/models/memories.py), [chat generation](https://github.com/open-webui/open-webui/blob/v0.12.5/backend/open_webui/utils/chat.py), [middleware](https://github.com/open-webui/open-webui/blob/v0.12.5/backend/open_webui/utils/middleware.py).
 
-1. **第一步：關閉原生個人化記憶**
-   進入 **設定 > 個人化 > 記憶**，將其**關閉**。這能確保只有我們的過濾器控制記憶，防止原生系統儲存無標籤的全域記憶。
-   
-2. **第二步：輸入含有雜訊的測試對話**
-   在特定資料夾的對話中輸入：
-   > **使用者**：「哎呀今天真的累死了，外面雨下得超大害我鞋子都濕透了，心情真差。對了，我最近在自學 Rust 語言，因為我之後可能要寫系統底層，主管說用 Rust 會比 C++ 安全。對了，你可以順便幫我寫一個用 Rust 寫的快速排序法嗎？我現在就要。」
-   
-   *（您會看到 `🧠 正在提取原子記憶...` 然後顯示 `✅ 已成功儲存 1 筆原子記憶至...`）*
+### 實機驗收 / Running-server checks
 
-3. **第三步：驗證提煉結果**
-   進入 **設定 > 個人化 > 管理記憶**，您會看到一筆精準的條目：
-   `[F_ID:xxx][C_ID:xxx] 使用者最近在自學 Rust 語言`
-   *（鞋子濕、下雨天、寫快速排序法等短期雜訊已成功被大模型過濾！）*
+1. In a separate v0.12.5 test instance, replace the function and set an accessible `memory_model` if needed.
+2. Say a transient event, then ask to remember it. Confirm `Saved 1 memory` and a row in Manage Memories.
+3. Say “delete that memory”. Confirm `Deleted 1 memory`, refresh Manage Memories, and verify the row is absent. A natural-language acknowledgement alone is insufficient.
+4. Add a preference and correct it. Verify replacement retains folder tags and changes the existing row rather than adding contradictory facts.
+5. Test recall questions, negations, ambiguous deletions, several languages, and a second folder/user. Verify no cross-scope mutation or retrieval.
+6. Verify native memory tools/background review stay disabled while unrelated tools still work. Test timeouts and vector failures separately.
+
+使用者已在測試環境確認 global 跨聊天讀取與資料夾記憶讀取。其他模型、權限、失敗處理及第三方工具組合仍需依上述清單驗收；這些確認不代表已完成全面實機整合測試。
