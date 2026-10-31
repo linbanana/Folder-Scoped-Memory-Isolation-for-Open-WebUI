@@ -1,5 +1,5 @@
 """
-title: Folder-Scoped Memory Isolation
+title: Folder-Scoped Memory Isolation with Atomic Memory
 author: linbanana
 author_url: https://github.com/linbanana
 version: 0.0.4
